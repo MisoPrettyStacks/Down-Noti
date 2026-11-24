@@ -1,377 +1,410 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>XRPL Downside Terminal — Bearish Anomaly & Drop Monitor</title>
-  <style>
-    :root {
-      --bg: #0b0d12;
-      --panel: #131722;
-      --border: #232938;
-      --text: #e2e8f0;
-      --muted: #8b95a5;
-      --crimson: #ff3b5c;
-      --crimson-dim: rgba(255, 59, 92, 0.14);
-      --amber: #f59e0b;
-      --cyan: #38bdf8;
-      --green: #10b981;
-    }
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>XRP Drop-Risk Monitor</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #10161c;
+    --panel: #17202a;
+    --line: #2a3745;
+    --text: #e6edf3;
+    --muted: #8b9bab;
+    --green: #3ddc97;
+    --amber: #f2b84b;
+    --crimson: #ff5d6c;
+    --blue: #5aa9ff;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.5 "Segoe UI", system-ui, -apple-system, Roboto, sans-serif; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 20px 16px 40px; }
+  header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 16px; }
+  h1 { font-size: 1.25rem; margin: 0; font-weight: 650; }
+  .conn { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: .9rem; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--crimson); }
+  .dot.live { background: var(--green); }
+  .xdot.live { background: var(--green); }
 
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, monospace; }
-    body { background: var(--bg); color: var(--text); padding: 20px; line-height: 1.5; }
-    .container { max-width: 1100px; margin: 0 auto; }
+  .signal { border: 1px solid var(--line); border-left: 5px solid var(--green); background: var(--panel);
+    border-radius: 8px; padding: 14px 16px; margin-bottom: 14px; }
+  .signal.mid { border-left-color: var(--amber); }
+  .signal.alert-active { border-left-color: var(--crimson); }
+  .signal h2 { margin: 0 0 4px; font-size: 1.05rem; }
+  .signal p { margin: 0; color: var(--muted); }
+  .pill { display: inline-block; margin-top: 8px; padding: 2px 10px; border: 1px solid var(--line); border-radius: 99px; font-weight: 600; }
 
-    /* Header */
-    header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 16px; margin-bottom: 20px; gap: 12px; }
-    .title-group h1 { font-size: 1.35rem; font-weight: 700; color: var(--crimson); letter-spacing: -0.02em; }
-    .title-group p { font-size: 0.8rem; color: var(--muted); }
-    .status-badge { display: inline-flex; align-items: center; gap: 8px; background: var(--panel); border: 1px solid var(--border); padding: 6px 12px; border-radius: 6px; font-size: 0.8rem; }
-    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--amber); animation: pulse 1.5s infinite; }
-    .dot.live { background: var(--crimson); }
-    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin-bottom: 14px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+  .card .label { color: var(--muted); font-size: .85rem; }
+  .card-value { font-size: 1.6rem; font-weight: 700; margin: 2px 0; font-variant-numeric: tabular-nums; }
+  .card .sub { color: var(--muted); font-size: .82rem; }
+  .safe { color: var(--green); } .warn { color: var(--amber); } .danger { color: var(--crimson); }
 
-    /* Controls Bar */
-    .controls { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; background: var(--panel); border: 1px solid var(--border); padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; gap: 12px; }
-    .mode-group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-    button { background: #1c2230; color: var(--text); border: 1px solid var(--border); padding: 6px 12px; border-radius: 5px; cursor: pointer; font-size: 0.8rem; transition: 0.15s; }
-    button:hover { border-color: var(--crimson); }
-    button.active { background: var(--crimson-dim); border-color: var(--crimson); color: var(--crimson); font-weight: 600; }
-    .budget-info { font-size: 0.8rem; color: var(--muted); display: flex; gap: 16px; align-items: center; }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 14px; }
+  button { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px;
+    padding: 6px 12px; font: inherit; cursor: pointer; }
+  button:hover { border-color: var(--blue); }
+  button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+  button.on { border-color: var(--blue); color: var(--blue); }
+  .meta { color: var(--muted); font-variant-numeric: tabular-nums; font-size: .9rem; }
 
-    /* Grid */
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-bottom: 20px; }
-    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
-    .card-label { font-size: 0.75rem; text-transform: uppercase; color: var(--muted); letter-spacing: 0.05em; margin-bottom: 6px; }
-    .card-value { font-size: 1.5rem; font-weight: 700; }
-    .card-sub { font-size: 0.78rem; color: var(--muted); margin-top: 4px; }
-
-    .danger { color: var(--crimson); }
-    .warn { color: var(--amber); }
-    .safe { color: var(--green); }
-
-    /* Alert Banner */
-    .signal-box { background: var(--panel); border: 1px solid var(--border); border-left: 4px solid var(--muted); border-radius: 8px; padding: 16px; margin-bottom: 20px; }
-    .signal-box.alert-active { border-left-color: var(--crimson); background: linear-gradient(90deg, rgba(255,59,92,0.08) 0%, var(--panel) 100%); }
-    .signal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-    .signal-title { font-weight: 700; font-size: 1rem; }
-    .drop-score-pill { padding: 3px 10px; border-radius: 999px; font-size: 0.78rem; font-weight: 700; background: #1c2230; }
-
-    /* Feed Log */
-    .feed-panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
-    .feed-header { font-size: 0.85rem; font-weight: 600; margin-bottom: 12px; color: var(--muted); display: flex; justify-content: space-between; }
-    .log-list { list-style: none; max-height: 280px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
-    .log-item { font-size: 0.82rem; padding: 8px 10px; background: #0e1118; border-radius: 5px; border-left: 3px solid var(--border); display: flex; justify-content: space-between; gap: 10px; }
-    .log-item.bearish { border-left-color: var(--crimson); }
-    .log-item.warning { border-left-color: var(--amber); }
-    .log-time { color: var(--muted); white-space: nowrap; font-size: 0.75rem; }
-  </style>
+  #log { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px;
+    height: 240px; overflow-y: auto; font: 12.5px/1.6 Consolas, Menlo, monospace; }
+  #log div { border-bottom: 1px solid #1f2a35; padding: 1px 0; }
+  #log .warning { color: var(--amber); } #log .bearish { color: var(--crimson); } #log .error { color: var(--crimson); }
+  #log time { color: var(--muted); margin-right: 8px; }
+</style>
 </head>
 <body>
-  <div class="container">
-    <header>
-      <div class="title-group">
-        <h1>XRPL Downside Terminal — Bearish Distribution Monitor</h1>
-        <p>Exhaustion tracking · overhead ask walls · taker sell pressure · live XRPL whale inflows</p>
-      </div>
-      <div class="status-badge">
-        <span class="dot" id="connDot"></span>
-        <span id="connStatus">Connecting WebSockets…</span>
-      </div>
-    </header>
-
-    <div class="controls">
-      <div class="mode-group">
-        <span style="font-size: 0.8rem; color: var(--muted);">Evaluation Cadence:</span>
-        <button id="btnStakeout" class="active" onclick="setMode(30)">Active Stakeout 30s</button>
-        <button id="btnEco" onclick="setMode(300)">Eco Monitor 5m</button>
-        <button id="btnPause" onclick="togglePause()">Pause Snapshot</button>
-        <button onclick="evaluateSignals()">Evaluate Now</button>
-      </div>
-      <div class="budget-info">
-        <span>Next snapshot: <strong id="countdown" style="color: var(--text);">0:30</strong></span>
-        <span>Stakeout budget: <strong id="budget" style="color: var(--amber);">5:00</strong> before eco shift</span>
-      </div>
+<div class="wrap">
+  <header>
+    <h1>XRP drop-risk monitor</h1>
+    <div class="conn">
+      <span class="dot" id="connDot"></span><span id="connStatus">Connecting to Kraken…</span>
+      <span class="dot" id="xrplDot"></span><span id="xrplStatus">XRPL…</span>
     </div>
+  </header>
 
-    <div class="signal-box" id="signalBox">
-      <div class="signal-header">
-        <span class="signal-title" id="signalTitle">Connecting to Kraken L2 & XRPL Mainnet…</span>
-        <span class="drop-score-pill" id="dropProb">Drop Risk: --%</span>
-      </div>
-      <p id="signalDesc" style="font-size: 0.85rem; color: var(--muted);">
-        Streaming real-time order book depth, taker sell volume, and on-chain XRP transfers.
-      </p>
-    </div>
+  <section class="signal" id="signalBox">
+    <h2 id="signalTitle">Waiting for order book data…</h2>
+    <p id="signalDesc">Live data from Kraken (XRP/USD) and the XRP Ledger will appear in a few seconds.</p>
+    <span class="pill" id="dropProb">Drop risk: –</span>
+  </section>
 
-    <div class="grid">
-      <div class="card">
-        <div class="card-label">XRP Spot Price (USD)</div>
-        <div class="card-value" id="priceVal">--</div>
-        <div class="card-sub" id="priceTarget">Downside Magnet: --</div>
-      </div>
+  <section class="grid">
+    <div class="card"><div class="label">XRP/USD price</div>
+      <div class="card-value" id="priceVal">–</div>
+      <div class="sub" id="priceTarget">Downside liquidity magnet: –</div></div>
+    <div class="card"><div class="label">Order book imbalance (top 25)</div>
+      <div class="card-value" id="imbalanceVal">–</div>
+      <div class="sub" id="imbalanceSub">–</div></div>
+    <div class="card"><div class="label">Taker flow (last 5 min)</div>
+      <div class="card-value" id="flowVal">–</div>
+      <div class="sub" id="flowSub">–</div></div>
+    <div class="card"><div class="label">XRPL whale transfers (25k+ XRP)</div>
+      <div class="card-value" id="xrplVal">0 Tx</div>
+      <div class="sub" id="xrplSub">Waiting for ledger activity</div></div>
+  </section>
 
-      <div class="card">
-        <div class="card-label">L2 Ask/Bid Imbalance (Top 25)</div>
-        <div class="card-value" id="imbalanceVal">--</div>
-        <div class="card-sub" id="imbalanceSub">Overhead sell wall ratio</div>
-      </div>
-
-      <div class="card">
-        <div class="card-label">Rolling Taker Sell Flow</div>
-        <div class="card-value" id="flowVal">--</div>
-        <div class="card-sub" id="flowSub">Aggressive market sell ratio</div>
-      </div>
-
-      <div class="card">
-        <div class="card-label">XRPL On-Chain Whale Flow</div>
-        <div class="card-value" id="xrplVal">0 Tx</div>
-        <div class="card-sub" id="xrplSub">Watching >25,000 XRP transfers</div>
-      </div>
-    </div>
-
-    <div class="feed-panel">
-      <div class="feed-header">
-        <span>LIVE BEARISH ANOMALY & ON-CHAIN DISTRIBUTION LOG</span>
-        <span id="pullCount">Snapshots: 0</span>
-      </div>
-      <ul class="log-list" id="logList"></ul>
-    </div>
+  <div class="bar">
+    <button id="btnPause">Pause</button>
+    <button id="btnFast" class="on">Stakeout (30s)</button>
+    <button id="btnEco">Eco (5m)</button>
+    <span class="meta">Next check <span id="countdown">0:30</span></span>
+    <span class="meta">Stakeout budget <span id="budget">5:00</span></span>
+    <span class="meta" id="pullCount">Snapshots: 0</span>
   </div>
 
-  <script>
-    let intervalSec = 30;
-    let timeLeft = 30;
-    let budgetSec = 300;
-    let isPaused = false;
-    let snapshotCount = 0;
+  <div id="log" aria-live="polite"></div>
+</div>
 
-    // Live market state maintained by WebSockets
-    let lastPrice = 0;
-    let bidsMap = new Map();
-    let asksMap = new Map();
-    let recentTrades = []; // { side: 'sell'|'buy', qty: number, ts: number }
-    let whaleTxCount = 0;
-    let whaleVolumeXRP = 0;
+<script>
+(() => {
+  'use strict';
 
-    function formatTime(sec) {
-      const m = Math.floor(sec / 60);
-      const s = sec % 60;
-      return `${m}:${s < 10 ? '0' : ''}${s}`;
+  // ---------- Config ----------
+  const KRAKEN_URL = 'wss://ws.kraken.com/v2';
+  const SYMBOL = 'XRP/USD';
+  const DEPTH = 25;
+  const XRPL_URL = 'wss://xrplcluster.com';
+  const WHALE_XRP = 25000;
+  const TRADE_WINDOW_MS = 5 * 60 * 1000;
+  const STAKEOUT_BUDGET = 300;
+
+  // ---------- State ----------
+  const bidsMap = new Map();
+  const asksMap = new Map();
+  let recentTrades = [];
+  let lastPrice = 0;
+  let whaleTxCount = 0;
+  let whaleVolumeXRP = 0;
+  let snapshotCount = 0;
+  let intervalSec = 30;
+  let timeLeft = 30;
+  let budgetSec = STAKEOUT_BUDGET;
+  let isPaused = false;
+  let krakenMsgCount = 0;
+  let krakenRetry = 0;
+  let xrplRetry = 0;
+
+  // ---------- Helpers ----------
+  const $ = (id) => document.getElementById(id);
+  const fmtTime = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  const usd = (n) => `$${n.toFixed(4)}`;
+
+  function addLog(text, level = '') {
+    const row = document.createElement('div');
+    if (level) row.className = level;
+    const t = document.createElement('time');
+    t.textContent = new Date().toLocaleTimeString();
+    row.append(t, document.createTextNode(text));
+    const log = $('log');
+    log.prepend(row);
+    while (log.children.length > 100) log.removeChild(log.lastChild);
+  }
+
+  function trimBook(map, descending) {
+    if (map.size <= DEPTH) return;
+    const keep = [...map.keys()].sort((a, b) => descending ? b - a : a - b).slice(0, DEPTH);
+    const keepSet = new Set(keep);
+    for (const k of [...map.keys()]) if (!keepSet.has(k)) map.delete(k);
+  }
+
+  function applySide(map, levels) {
+    if (!Array.isArray(levels)) return;
+    for (const l of levels) {
+      const price = Number(l.price), qty = Number(l.qty);
+      if (!Number.isFinite(price) || !Number.isFinite(qty)) continue;
+      if (qty === 0) map.delete(price); else map.set(price, qty);
+    }
+  }
+
+  function renderPrice() {
+    if (lastPrice > 0) $('priceVal').textContent = usd(lastPrice);
+  }
+
+  // ---------- Kraken (order book + trades) ----------
+  function connectKraken() {
+    let ws;
+    try { ws = new WebSocket(KRAKEN_URL); }
+    catch (e) { addLog('Could not open Kraken socket: ' + e.message, 'error'); return scheduleKraken(); }
+
+    ws.onopen = () => {
+      krakenRetry = 0;
+      $('connDot').classList.add('live');
+      $('connStatus').textContent = 'Kraken live';
+      addLog(`Connected to Kraken v2 (${SYMBOL}, depth ${DEPTH}).`);
+      ws.send(JSON.stringify({ method: 'subscribe', params: { channel: 'book', symbol: [SYMBOL], depth: DEPTH } }));
+      ws.send(JSON.stringify({ method: 'subscribe', params: { channel: 'trade', symbol: [SYMBOL], snapshot: true } }));
+    };
+
+    ws.onmessage = (event) => {
+      let msg;
+      try { msg = JSON.parse(event.data); } catch { return; }
+      krakenMsgCount++;
+
+      if (msg.method === 'subscribe' && msg.success === false) {
+        addLog(`Kraken rejected subscription: ${msg.error || 'unknown error'}`, 'error');
+        return;
+      }
+
+      if (msg.channel === 'book' && Array.isArray(msg.data) && msg.data.length) {
+        if (msg.type === 'snapshot') { bidsMap.clear(); asksMap.clear(); }
+        for (const d of msg.data) {
+          applySide(bidsMap, d.bids);
+          applySide(asksMap, d.asks);
+        }
+        trimBook(bidsMap, true);
+        trimBook(asksMap, false);
+        if (lastPrice === 0 && asksMap.size > 0) {
+          lastPrice = Math.min(...asksMap.keys());
+          renderPrice();
+          evaluateSignals();
+        }
+      }
+
+      if (msg.channel === 'trade' && Array.isArray(msg.data) && msg.data.length) {
+        const now = Date.now();
+        for (const t of msg.data) {
+          const price = Number(t.price), qty = Number(t.qty);
+          if (!Number.isFinite(price) || !Number.isFinite(qty)) continue;
+          lastPrice = price;
+          const ts = Date.parse(t.timestamp) || now;
+          recentTrades.push({ side: t.side, qty, ts });
+        }
+        recentTrades = recentTrades.filter((t) => now - t.ts <= TRADE_WINDOW_MS);
+        renderPrice();
+      }
+    };
+
+    ws.onerror = () => addLog('Kraken WebSocket error.', 'warning');
+    ws.onclose = () => {
+      $('connDot').classList.remove('live');
+      $('connStatus').textContent = 'Kraken reconnecting…';
+      scheduleKraken();
+    };
+  }
+
+  function scheduleKraken() {
+    krakenRetry++;
+    const delay = Math.min(30000, 2000 * krakenRetry);
+    addLog(`Kraken disconnected. Retrying in ${delay / 1000}s…`, 'warning');
+    setTimeout(connectKraken, delay);
+  }
+
+  // ---------- XRPL (whale transfers) ----------
+  function connectXRPL() {
+    let ws;
+    try { ws = new WebSocket(XRPL_URL); }
+    catch (e) { addLog('Could not open XRPL socket: ' + e.message, 'error'); return scheduleXRPL(); }
+
+    ws.onopen = () => {
+      xrplRetry = 0;
+      $('xrplDot').classList.add('live');
+      $('xrplStatus').textContent = 'XRPL live';
+      addLog(`Connected to XRPL (watching Payments of ${WHALE_XRP.toLocaleString()}+ XRP).`);
+      ws.send(JSON.stringify({ command: 'subscribe', streams: ['transactions'] }));
+    };
+
+    ws.onmessage = (event) => {
+      let data;
+      try { data = JSON.parse(event.data); } catch { return; }
+      if (data.status === 'error') { addLog('XRPL error: ' + (data.error_message || data.error), 'error'); return; }
+      if (data.type !== 'transaction' || !data.validated) return;
+
+      const tx = data.transaction || data.tx_json;
+      if (!tx || tx.TransactionType !== 'Payment' || typeof tx.Amount !== 'string') return;
+      if (data.meta && data.meta.TransactionResult && data.meta.TransactionResult !== 'tesSUCCESS') return;
+
+      const xrp = parseInt(tx.Amount, 10) / 1e6;
+      if (!(xrp >= WHALE_XRP)) return;
+
+      whaleTxCount++;
+      whaleVolumeXRP += xrp;
+      $('xrplVal').textContent = `${whaleTxCount} Tx`;
+      $('xrplSub').textContent = `${(whaleVolumeXRP / 1000).toFixed(1)}k XRP moved on-chain`;
+      const from = (tx.Account || '?').slice(0, 6);
+      const to = (tx.Destination || '?').slice(0, 6);
+      addLog(`XRPL whale transfer: ${xrp.toLocaleString(undefined, { maximumFractionDigits: 0 })} XRP (${from}… → ${to}…)`, 'warning');
+    };
+
+    ws.onerror = () => addLog('XRPL WebSocket error.', 'warning');
+    ws.onclose = () => {
+      $('xrplDot').classList.remove('live');
+      $('xrplStatus').textContent = 'XRPL reconnecting…';
+      scheduleXRPL();
+    };
+  }
+
+  function scheduleXRPL() {
+    xrplRetry++;
+    setTimeout(connectXRPL, Math.min(30000, 3000 * xrplRetry));
+  }
+
+  // ---------- Signal evaluation ----------
+  function evaluateSignals() {
+    if (bidsMap.size === 0 || asksMap.size === 0) return;
+
+    const bids = [...bidsMap.entries()].sort((a, b) => b[0] - a[0]).slice(0, DEPTH);
+    const asks = [...asksMap.entries()].sort((a, b) => a[0] - b[0]).slice(0, DEPTH);
+    const mid = lastPrice || (bids[0][0] + asks[0][0]) / 2;
+
+    let bidUsd = 0, askUsd = 0;
+    let wall = { price: mid * 0.992, qty: 0 };
+    for (const [p, q] of bids) {
+      bidUsd += p * q;
+      if (q > wall.qty && p < mid * 0.9985) wall = { price: p, qty: q };
+    }
+    for (const [p, q] of asks) askUsd += p * q;
+    const ratio = askUsd / (bidUsd || 1);
+
+    const now = Date.now();
+    recentTrades = recentTrades.filter((t) => now - t.ts <= TRADE_WINDOW_MS);
+    let sellVol = 0, totalVol = 0;
+    for (const t of recentTrades) { totalVol += t.qty; if (t.side === 'sell') sellVol += t.qty; }
+    const sellPct = totalVol > 0 ? (sellVol / totalVol) * 100 : 50;
+
+    let risk = 20;
+    if (ratio > 1.15) risk += Math.min(35, (ratio - 1) * 28);
+    if (sellPct > 51) risk += Math.min(35, (sellPct - 50) * 1.8);
+    if (whaleTxCount > 0) risk += Math.min(15, whaleTxCount * 3);
+    risk = Math.min(98, Math.max(5, Math.round(risk)));
+
+    $('priceVal').textContent = usd(mid);
+    $('priceTarget').textContent = `Downside liquidity magnet: ${usd(wall.price)}`;
+
+    const imb = $('imbalanceVal');
+    imb.textContent = `${ratio.toFixed(2)}x ask`;
+    imb.className = 'card-value ' + (ratio >= 1.5 ? 'danger' : ratio >= 1.15 ? 'warn' : 'safe');
+    $('imbalanceSub').textContent = `Asks $${(askUsd / 1000).toFixed(1)}k vs bids $${(bidUsd / 1000).toFixed(1)}k`;
+
+    const flow = $('flowVal');
+    flow.textContent = `${sellPct.toFixed(1)}% sell`;
+    flow.className = 'card-value ' + (sellPct >= 58 ? 'danger' : sellPct >= 52 ? 'warn' : 'safe');
+    $('flowSub').textContent = `Sell vol ${sellVol.toFixed(0)} / ${totalVol.toFixed(0)} XRP`;
+
+    const box = $('signalBox'), title = $('signalTitle'), desc = $('signalDesc'), pill = $('dropProb');
+    pill.textContent = `Drop risk: ${risk}%`;
+    box.classList.remove('alert-active', 'mid');
+
+    if (risk >= 68) {
+      box.classList.add('alert-active');
+      pill.style.color = 'var(--crimson)';
+      title.textContent = 'High drop probability: overhead supply and taker selling';
+      desc.textContent = `Asks outweigh bids by ${ratio.toFixed(2)}x while taker selling is ${sellPct.toFixed(1)}%. Watch for a sweep toward ${usd(wall.price)}.`;
+      addLog(`ALERT (${risk}% risk): ask/bid ${ratio.toFixed(2)}x | taker sell ${sellPct.toFixed(1)}% | target ${usd(wall.price)}`, 'bearish');
+    } else if (risk >= 48) {
+      box.classList.add('mid');
+      pill.style.color = 'var(--amber)';
+      title.textContent = 'Moderate distribution: sell pressure building';
+      desc.textContent = `Taker selling is ${sellPct.toFixed(1)}% with a ${ratio.toFixed(2)}x ask/bid ratio. Monitor support at ${usd(wall.price)}.`;
+      addLog(`Caution (${risk}% risk): taker sell ${sellPct.toFixed(1)}% | ask/bid ${ratio.toFixed(2)}x`, 'warning');
+    } else {
+      pill.style.color = 'var(--green)';
+      title.textContent = 'Low drop risk: bids absorbing flow';
+      desc.textContent = 'No heavy overhead ask wall or aggressive taker-sell imbalance detected.';
+      addLog(`Snapshot (${risk}% risk): price ${usd(mid)} | ask/bid ${ratio.toFixed(2)}x`);
     }
 
-    function addLog(msg, type = 'neutral') {
-      const list = document.getElementById('logList');
-      const li = document.createElement('li');
-      li.className = `log-item ${type}`;
-      const now = new Date().toLocaleTimeString([], { hour12: false });
-      li.innerHTML = `<span>${msg}</span><span class="log-time">${now}</span>`;
-      list.prepend(li);
-      if (list.children.length > 50) list.removeChild(list.lastChild);
+    snapshotCount++;
+    $('pullCount').textContent = `Snapshots: ${snapshotCount}`;
+  }
+
+  // ---------- Modes and timer ----------
+  function setMode(sec) {
+    intervalSec = sec;
+    timeLeft = sec;
+    $('btnFast').classList.toggle('on', sec === 30);
+    $('btnEco').classList.toggle('on', sec === 300);
+    $('countdown').textContent = fmtTime(timeLeft);
+  }
+
+  $('btnPause').addEventListener('click', () => {
+    isPaused = !isPaused;
+    $('btnPause').textContent = isPaused ? 'Resume' : 'Pause';
+    addLog(isPaused ? 'Checks paused (streams stay connected).' : 'Checks resumed.');
+  });
+  $('btnFast').addEventListener('click', () => {
+    if (budgetSec <= 0) budgetSec = STAKEOUT_BUDGET;
+    $('budget').textContent = fmtTime(budgetSec);
+    setMode(30);
+  });
+  $('btnEco').addEventListener('click', () => setMode(300));
+
+  setInterval(() => {
+    if (isPaused) return;
+    if (intervalSec === 30 && budgetSec > 0) {
+      budgetSec--;
+      $('budget').textContent = fmtTime(budgetSec);
+      if (budgetSec === 0) {
+        addLog('Stakeout budget used up. Switching to Eco monitor (5m).', 'warning');
+        setMode(300);
+      }
     }
-
-    function setMode(sec) {
-      intervalSec = sec;
-      timeLeft = sec;
-      document.getElementById('btnStakeout').classList.toggle('active', sec === 30);
-      document.getElementById('btnEco').classList.toggle('active', sec === 300);
-      addLog(`Switched cadence to ${sec === 30 ? 'Active Stakeout (30s)' : 'Eco Monitor (5m)'}.`);
+    timeLeft--;
+    if (timeLeft <= 0) {
+      evaluateSignals();
+      timeLeft = intervalSec;
     }
+    $('countdown').textContent = fmtTime(timeLeft);
+  }, 1000);
 
-    function togglePause() {
-      isPaused = !isPaused;
-      const btn = document.getElementById('btnPause');
-      btn.textContent = isPaused ? 'Resume Snapshots' : 'Pause Snapshot';
-      btn.classList.toggle('active', isPaused);
-      addLog(isPaused ? 'Evaluation snapshots paused.' : 'Evaluation snapshots resumed.');
+  // ---------- Start ----------
+  if (location.protocol === 'file:' || location.protocol.startsWith('http')) {
+    connectKraken();
+    connectXRPL();
+  }
+
+  // Watchdog: tell the user if nothing arrives
+  setTimeout(() => {
+    if (krakenMsgCount === 0) {
+      addLog('No data from Kraken after 10s. If this page is open inside Claude or another sandbox, outside connections are blocked: download the file and open it directly in Chrome or Firefox. Also check VPN/ad-blocker settings.', 'error');
     }
-
-    // 1. Connect to Kraken Public WebSocket v2 (No CORS, Works from file://)
-    function connectKrakenWS() {
-      const ws = new WebSocket('wss://://kraken.com');
-
-      ws.onopen = () => {
-        document.getElementById('connDot').classList.add('live');
-        document.getElementById('connStatus').textContent = 'Connected · Live Market & XRPL';
-        addLog('Connected to Kraken v2 real-time order book & trade stream.');
-
-        ws.send(JSON.stringify({
-          method: 'subscribe',
-          params: { channel: 'book', symbol: ['XRP/USD'], depth: 25 }
-        }));
-
-        ws.send(JSON.stringify({
-          method: 'subscribe',
-          params: { channel: 'trade', symbol: ['XRP/USD'] }
-        }));
-      };
-
-      ws.onmessage = (event) => {
-        const msg = JSON.parse(event.data);
-
-        // Handle Order Book Snapshot & Updates
-        if (msg.channel === 'book' && msg.data && msg.data.length > 0) {
-          const bookData = msg.data[0];
-if (msg.type === 'snapshot') {
-bidsMap.clear();
-asksMap.clear();
-}
-if (bookData.bids) {
-bookData.bids.forEach(b => {
-if (b.qty === 0) bidsMap.delete(b.price);
-else bidsMap.set(b.price, b.qty);
-});
-}
-if (bookData.asks) {
-bookData.asks.forEach(a => {
-if (a.qty === 0) asksMap.delete(a.price);
-else asksMap.set(a.price, a.qty);
-});
-}
-if (lastPrice === 0 && asksMap.size > 0) {
-lastPrice = Math.min(...asksMap.keys());
-evaluateSignals();
-}
-}
-// Handle Live Trades
-if (msg.channel === 'trade' && msg.data && msg.data.length > 0) {
-const now = Date.now();
-msg.data.forEach(t => {
-lastPrice = t.price;
-recentTrades.push({ side: t.side, qty: t.qty, ts: now });
-});
-// Keep last 5 minutes of trades
-recentTrades = recentTrades.filter(t => now - t.ts <= 300000);
-document.getElementById('priceVal').textContent = $${lastPrice.toFixed(4)};
-}
-};
-ws.onerror = () => {
-addLog('Kraken WebSocket error — retrying in 3s…', 'warning');
-};
-ws.onclose = () => {
-document.getElementById('connDot').classList.remove('live');
-document.getElementById('connStatus').textContent = 'Reconnecting…';
-setTimeout(connectKrakenWS, 3000);
-};
-}
-// 2. Connect to XRPL Mainnet Public Cluster for Whale Transfers
-function connectXRPLWS() {
-const xrpl = new WebSocket('wss://xrplcluster.com');
-xrpl.onopen = () => {
-addLog('Connected to XRPL Mainnet ledger stream (monitoring >25k XRP transfers).');
-xrpl.send(JSON.stringify({
-command: 'subscribe',
-streams: ['transactions']
-}));
-};
-xrpl.onmessage = (event) => {
-const data = JSON.parse(event.data);
-if (data.type === 'transaction' && data.validated && data.transaction) {
-const tx = data.transaction;
-if (tx.TransactionType === 'Payment' && typeof tx.Amount === 'string') {
-const xrpAmount = parseInt(tx.Amount, 10) / 1000000;
-if (xrpAmount >= 25000) {
-whaleTxCount++;
-whaleVolumeXRP += xrpAmount;
-document.getElementById('xrplVal').textContent = ${whaleTxCount} Tx;
-document.getElementById('xrplSub').textContent = ${(whaleVolumeXRP / 1000).toFixed(1)}k XRP moved on-chain;
-document.getElementById('priceVal').textContent = `$${lastPrice.toFixed(4)}`;
-addLog(`XRPL WHALE TRANSFER: ${...} XRP moved ...`, 'warning');}
-}
-}
-};
-xrpl.onclose = () => setTimeout(connectXRPLWS, 5000);
-}
-// 3. Evaluate Composite Bearish Drop Risk
-function evaluateSignals() {
-if (bidsMap.size === 0 || asksMap.size === 0) return;
-const sortedBids = Array.from(bidsMap.entries()).sort((a, b) => b[0] - a[0]).slice(0, 25);
-const sortedAsks = Array.from(asksMap.entries()).sort((a, b) => a[0] - b[0]).slice(0, 25);
-const bestBid = sortedBids[0][0];
-const bestAsk = sortedAsks[0][0];
-const midPrice = lastPrice || ((bestBid + bestAsk) / 2);
-let bidUsd = 0;
-let maxBidWall = { price: midPrice * 0.992, qty: 0 };
-sortedBids.forEach(([p, q]) => {
-bidUsd += p * q;
-if (q > maxBidWall.qty && p < midPrice * 0.9985) {
-maxBidWall = { price: p, qty: q };
-}
-});
-let askUsd = 0;
-sortedAsks.forEach(([p, q]) => {
-askUsd += p * q;
-});
-const askBidRatio = askUsd / (bidUsd || 1);
-// Taker Sell Percentage from rolling trades
-let sellVol = 0, totalVol = 0;
-recentTrades.forEach(t => {
-totalVol += t.qty;
-if (t.side === 'sell') sellVol += t.qty;
-});
-const sellPct = totalVol > 0 ? (sellVol / totalVol) * 100 : 50;
-// Composite Drop Risk Score (0 - 100)
-let riskScore = 20;
-if (askBidRatio > 1.15) riskScore += Math.min(35, (askBidRatio - 1) * 28);
-if (sellPct > 51) riskScore += Math.min(35, (sellPct - 50) * 1.8);
-if (whaleTxCount > 0) riskScore += Math.min(15, whaleTxCount * 3);
-riskScore = Math.min(98, Math.max(5, Math.round(riskScore)));
-// Update UI
-document.getElementById('priceVal').textContent = $${midPrice.toFixed(4)};
-document.getElementById('priceTarget').textContent = Downside Liquidity Magnet: $${maxBidWall.price.toFixed(4)};
-const imbEl = document.getElementById('imbalanceVal');
-imbEl.textContent = ${askBidRatio.toFixed(2)}x Ask;
-imbEl.className = card-value ${askBidRatio >= 1.5 ? 'danger' : askBidRatio >= 1.15 ? 'warn' : 'safe'};
-document.getElementById('imbalanceSub').textContent = Asks: $${(askUsd / 1000).toFixed(1)}k vs Bids: $${(bidUsd / 1000).toFixed(1)}k;
-const flowEl = document.getElementById('flowVal');
-flowEl.textContent = ${sellPct.toFixed(1)}% Sell;
-flowEl.className = card-value ${sellPct >= 58 ? 'danger' : sellPct >= 52 ? 'warn' : 'safe'};
-document.getElementById('flowSub').textContent = Sell Vol: ${sellVol.toFixed(0)} / ${totalVol.toFixed(0)} XRP;
-const sigBox = document.getElementById('signalBox');
-const sigTitle = document.getElementById('signalTitle');
-const sigDesc = document.getElementById('signalDesc');
-const dropPill = document.getElementById('dropProb');
-dropPill.textContent = Drop Risk: ${riskScore}%;
-if (riskScore >= 68) {
-sigBox.classList.add('alert-active');
-dropPill.style.color = 'var(--crimson)';
-sigTitle.textContent = 'HIGH DROP PROBABILITY — Overhead Supply & Taker Selling';
-sigDesc.textContent = Overhead asks outweigh bids by ${askBidRatio.toFixed(2)}x while aggressive selling is ${sellPct.toFixed(1)}%. Watch liquidity sweep toward $${maxBidWall.price.toFixed(4)}.;
-addLog(ALERT (${riskScore}% Drop Risk): Ask/Bid ${askBidRatio.toFixed(2)}x | Taker Sell ${sellPct.toFixed(1)}% | Target $${maxBidWall.price.toFixed(4)}, 'bearish');
-} else if (riskScore >= 48) {
-sigBox.classList.remove('alert-active');
-dropPill.style.color = 'var(--amber)';
-sigTitle.textContent = 'MODERATE DISTRIBUTION — Sell Pressure Building';
-sigDesc.textContent = Taker selling is at ${sellPct.toFixed(1)}% with ${askBidRatio.toFixed(2)}x ask/bid ratio. Monitor support at $${maxBidWall.price.toFixed(4)}.;
-addLog(Caution (${riskScore}% Risk): Taker Sell ${sellPct.toFixed(1)}% | Ask/Bid ${askBidRatio.toFixed(2)}x, 'warning');
-} else {
-sigBox.classList.remove('alert-active');
-dropPill.style.color = 'var(--green)';
-sigTitle.textContent = 'LOW DROP RISK — Bids Absorbing Flow';
-sigDesc.textContent = 'No heavy overhead ask wall or aggressive taker sell imbalance detected.';
-addLog(Snapshot (${riskScore}% Risk): Price $${midPrice.toFixed(4)} | Ask/Bid ${askBidRatio.toFixed(2)}x.);
-}
-snapshotCount++;
-document.getElementById('pullCount').textContent = Snapshots: ${snapshotCount};
-}
-// Master Timer Loop
-setInterval(() => {
-if (isPaused) return;
-if (intervalSec === 30 && budgetSec > 0) {
-budgetSec--;
-document.getElementById('budget').textContent = formatTime(budgetSec);
-if (budgetSec === 0) {
-addLog('5:00 Stakeout budget complete. Shifting to Eco Monitor (5m).', 'warning');
-setMode(300);
-}
-}
-timeLeft--;
-if (timeLeft <= 0) {
-evaluateSignals();
-timeLeft = intervalSec;
-}
-document.getElementById('countdown').textContent = formatTime(timeLeft);
-}, 1000);
-// Start Live WebSocket Streams Immediately
-connectKrakenWS();
-connectXRPLWS();
+  }, 10000);
+})();
+</script>
+</body>
+</html>
