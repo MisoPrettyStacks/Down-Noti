@@ -275,8 +275,8 @@ whaleTxCount++;
 whaleVolumeXRP += xrpAmount;
 document.getElementById('xrplVal').textContent = ${whaleTxCount} Tx;
 document.getElementById('xrplSub').textContent = ${(whaleVolumeXRP / 1000).toFixed(1)}k XRP moved on-chain;
-addLog(XRPL WHALE TRANSFER: ${xrpAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })} XRP moved (${tx.Account.slice(0, 6)}… → ${tx.Destination.slice(0, 6)}…), 'warning');
-}
+document.getElementById('priceVal').textContent = `$${lastPrice.toFixed(4)}`;
+addLog(`XRPL WHALE TRANSFER: ${...} XRP moved ...`, 'warning');}
 }
 }
 };
