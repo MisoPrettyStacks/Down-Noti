@@ -20,7 +20,6 @@
 
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, monospace; }
     body { background: var(--bg); color: var(--text); padding: 20px; line-height: 1.5; }
-
     .container { max-width: 1100px; margin: 0 auto; }
 
     /* Header */
@@ -73,35 +72,35 @@
     <header>
       <div class="title-group">
         <h1>XRPL Downside Terminal — Bearish Distribution Monitor</h1>
-        <p>Exhaustion tracking · overhead ask walls · long liquidation traps · exchange inflow footprints</p>
+        <p>Exhaustion tracking · overhead ask walls · taker sell pressure · live XRPL whale inflows</p>
       </div>
       <div class="status-badge">
         <span class="dot" id="connDot"></span>
-        <span id="connStatus">Initializing feeds…</span>
+        <span id="connStatus">Connecting WebSockets…</span>
       </div>
     </header>
 
     <div class="controls">
       <div class="mode-group">
-        <span style="font-size: 0.8rem; color: var(--muted);">Refresh Mode:</span>
+        <span style="font-size: 0.8rem; color: var(--muted);">Evaluation Cadence:</span>
         <button id="btnStakeout" class="active" onclick="setMode(30)">Active Stakeout 30s</button>
         <button id="btnEco" onclick="setMode(300)">Eco Monitor 5m</button>
-        <button id="btnPause" onclick="togglePause()">Pause Pull Now</button>
-        <button onclick="fetchBearishMetrics()">Force Pull</button>
+        <button id="btnPause" onclick="togglePause()">Pause Snapshot</button>
+        <button onclick="evaluateSignals()">Evaluate Now</button>
       </div>
       <div class="budget-info">
-        <span>Next free pull: <strong id="countdown" style="color: var(--text);">0:30</strong></span>
-        <span>Stakeout budget: <strong id="budget" style="color: var(--amber);">5:00</strong> before rate-limit pause</span>
+        <span>Next snapshot: <strong id="countdown" style="color: var(--text);">0:30</strong></span>
+        <span>Stakeout budget: <strong id="budget" style="color: var(--amber);">5:00</strong> before eco shift</span>
       </div>
     </div>
 
     <div class="signal-box" id="signalBox">
       <div class="signal-header">
-        <span class="signal-title" id="signalTitle">Scanning for Bearish Divergence & Liquidity Traps…</span>
+        <span class="signal-title" id="signalTitle">Connecting to Kraken L2 & XRPL Mainnet…</span>
         <span class="drop-score-pill" id="dropProb">Drop Risk: --%</span>
       </div>
       <p id="signalDesc" style="font-size: 0.85rem; color: var(--muted);">
-        Waiting for initial order book depth, perp funding, and spot taker sell ratios.
+        Streaming real-time order book depth, taker sell volume, and on-chain XRP transfers.
       </p>
     </div>
 
@@ -113,28 +112,28 @@
       </div>
 
       <div class="card">
-        <div class="card-label">L2 Ask/Bid Imbalance (Top 50)</div>
+        <div class="card-label">L2 Ask/Bid Imbalance (Top 25)</div>
         <div class="card-value" id="imbalanceVal">--</div>
-        <div class="card-sub" id="imbalanceSub">Overhead sell pressure ratio</div>
+        <div class="card-sub" id="imbalanceSub">Overhead sell wall ratio</div>
       </div>
 
       <div class="card">
-        <div class="card-label">Taker Sell / Buy Flow (5m)</div>
+        <div class="card-label">Rolling Taker Sell Flow</div>
         <div class="card-value" id="flowVal">--</div>
-        <div class="card-sub" id="flowSub">Spot CVD exhaustion check</div>
+        <div class="card-sub" id="flowSub">Aggressive market sell ratio</div>
       </div>
 
       <div class="card">
-        <div class="card-label">Perp Long Trap Risk</div>
-        <div class="card-value" id="fundingVal">--</div>
-        <div class="card-sub" id="fundingSub">Funding & crowded long leverage</div>
+        <div class="card-label">XRPL On-Chain Whale Flow</div>
+        <div class="card-value" id="xrplVal">0 Tx</div>
+        <div class="card-sub" id="xrplSub">Watching >25,000 XRP transfers</div>
       </div>
     </div>
 
     <div class="feed-panel">
       <div class="feed-header">
         <span>LIVE BEARISH ANOMALY & ON-CHAIN DISTRIBUTION LOG</span>
-        <span id="pullCount">Pulls: 0</span>
+        <span id="pullCount">Snapshots: 0</span>
       </div>
       <ul class="log-list" id="logList"></ul>
     </div>
@@ -145,7 +144,15 @@
     let timeLeft = 30;
     let budgetSec = 300;
     let isPaused = false;
-    let pullCounter = 0;
+    let snapshotCount = 0;
+
+    // Live market state maintained by WebSockets
+    let lastPrice = 0;
+    let bidsMap = new Map();
+    let asksMap = new Map();
+    let recentTrades = []; // { side: 'sell'|'buy', qty: number, ts: number }
+    let whaleTxCount = 0;
+    let whaleVolumeXRP = 0;
 
     function formatTime(sec) {
       const m = Math.floor(sec / 60);
@@ -160,7 +167,7 @@
       const now = new Date().toLocaleTimeString([], { hour12: false });
       li.innerHTML = `<span>${msg}</span><span class="log-time">${now}</span>`;
       list.prepend(li);
-      if (list.children.length > 40) list.removeChild(list.lastChild);
+      if (list.children.length > 50) list.removeChild(list.lastChild);
     }
 
     function setMode(sec) {
@@ -168,105 +175,158 @@
       timeLeft = sec;
       document.getElementById('btnStakeout').classList.toggle('active', sec === 30);
       document.getElementById('btnEco').classList.toggle('active', sec === 300);
-      addLog(`Switched refresh mode to ${sec === 30 ? 'Active Stakeout (30s)' : 'Eco Monitor (5m)'}.`);
+      addLog(`Switched cadence to ${sec === 30 ? 'Active Stakeout (30s)' : 'Eco Monitor (5m)'}.`);
     }
 
     function togglePause() {
       isPaused = !isPaused;
       const btn = document.getElementById('btnPause');
-      btn.textContent = isPaused ? 'Resume Pulls' : 'Pause Pull Now';
+      btn.textContent = isPaused ? 'Resume Snapshots' : 'Pause Snapshot';
       btn.classList.toggle('active', isPaused);
-      addLog(isPaused ? 'Feed polling paused by user.' : 'Feed polling resumed.');
+      addLog(isPaused ? 'Evaluation snapshots paused.' : 'Evaluation snapshots resumed.');
     }
 
-    async function fetchBearishMetrics() {
-      try {
-        document.getElementById('connStatus').textContent = 'Pulling live feeds…';
+    // 1. Connect to Kraken Public WebSocket v2 (No CORS, Works from file://)
+    function connectKrakenWS() {
+      const ws = new WebSocket('wss://://kraken.com');
 
-        // 1. Coinbase Exchange Spot Ticker (US-accessible, no CORS blocks)
-        const tickerRes = await fetch('https://coinbase.com');
-        if (!tickerRes.ok) throw new Error(`Coinbase Ticker HTTP ${tickerRes.status}`);
-        const ticker = await tickerRes.json();
-        const price = parseFloat(ticker.price);
+      ws.onopen = () => {
+        document.getElementById('connDot').classList.add('live');
+        document.getElementById('connStatus').textContent = 'Connected · Live Market & XRPL';
+        addLog('Connected to Kraken v2 real-time order book & trade stream.');
 
-        // 2. Coinbase Exchange Level 2 Order Book (Top 50 levels)
-        const bookRes = await fetch('https://coinbase.com');
-        if (!bookRes.ok) throw new Error(`Coinbase Book HTTP ${bookRes.status}`);
-        const book = await bookRes.json();
+        ws.send(JSON.stringify({
+          method: 'subscribe',
+          params: { channel: 'book', symbol: ['XRP/USD'], depth: 25 }
+        }));
 
-        let bidVol = 0, askVol = 0;
-        let maxBidWall = { price: 0, qty: 0 };
+        ws.send(JSON.stringify({
+          method: 'subscribe',
+          params: { channel: 'trade', symbol: ['XRP/USD'] }
+        }));
+      };
 
-        book.bids.slice(0, 50).forEach(([p, q]) => {
-          const fp = parseFloat(p), fq = parseFloat(q);
-          bidVol += fp * fq;
-          if (fq > maxBidWall.qty && fp < price * 0.9985) {
-            maxBidWall = { price: fp, qty: fq };
-          }
-        });
+      ws.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
 
-        book.asks.slice(0, 50).forEach(([p, q]) => {
-askVol += parseFloat(p) * parseFloat(q);
+        // Handle Order Book Snapshot & Updates
+        if (msg.channel === 'book' && msg.data && msg.data.length > 0) {
+          const bookData = msg.data[0];
+if (msg.type === 'snapshot') {
+bidsMap.clear();
+asksMap.clear();
+}
+if (bookData.bids) {
+bookData.bids.forEach(b => {
+if (b.qty === 0) bidsMap.delete(b.price);
+else bidsMap.set(b.price, b.qty);
 });
-const askBidRatio = askVol / (bidVol || 1);
-// 3. Binance.US 5m Klines for Taker Sell vs Buy Volume (Indices [5] and)
-let sellPct = 50;
-let takerSellVol = 0;
-try {
-const klineRes = await fetch('binance.us');
-const klines = await klineRes.json();
-const latest = klines[klines.length - 1];
-const totalVol = parseFloat(latest[5]);
-const takerBuyVol = parseFloat(latest[9]);
-takerSellVol = Math.max(0, totalVol - takerBuyVol);
-sellPct = totalVol > 0 ? (takerSellVol / totalVol) * 100 : 50;
-} catch (e) {
-// Fallback to recent Coinbase trades if Binance.US is unreachable
-const tradesRes = await fetch('coinbase.com');
-const trades = await tradesRes.json();
-let sellSize = 0, totalSize = 0;
-trades.forEach(t => {
-const sz = parseFloat(t.size);
-totalSize += sz;
-if (t.side === 'buy') sellSize += sz; // On Coinbase, side='buy' means maker was buy (taker sold)
+}
+if (bookData.asks) {
+bookData.asks.forEach(a => {
+if (a.qty === 0) asksMap.delete(a.price);
+else asksMap.set(a.price, a.qty);
 });
-takerSellVol = sellSize;
-sellPct = totalSize > 0 ? (sellSize / totalSize) * 100 : 50;
 }
-// 4. OKX Public Perpetual Funding Rate (Global benchmark, CORS-friendly)
-let fundingRate = 0;
-try {
-const fundRes = await fetch('okx.com');
-const fundJson = await fundRes.json();
-if (fundJson.data && fundJson.data.length > 0) {
-fundingRate = parseFloat(fundJson.data[0].fundingRate) * 100;
+if (lastPrice === 0 && asksMap.size > 0) {
+lastPrice = Math.min(...asksMap.keys());
+evaluateSignals();
 }
-} catch (e) {
-fundingRate = 0;
 }
-// Calculate Composite Drop Risk Score (0 - 100)
+// Handle Live Trades
+if (msg.channel === 'trade' && msg.data && msg.data.length > 0) {
+const now = Date.now();
+msg.data.forEach(t => {
+lastPrice = t.price;
+recentTrades.push({ side: t.side, qty: t.qty, ts: now });
+});
+// Keep last 5 minutes of trades
+recentTrades = recentTrades.filter(t => now - t.ts <= 300000);
+document.getElementById('priceVal').textContent = $${lastPrice.toFixed(4)};
+}
+};
+ws.onerror = () => {
+addLog('Kraken WebSocket error — retrying in 3s…', 'warning');
+};
+ws.onclose = () => {
+document.getElementById('connDot').classList.remove('live');
+document.getElementById('connStatus').textContent = 'Reconnecting…';
+setTimeout(connectKrakenWS, 3000);
+};
+}
+// 2. Connect to XRPL Mainnet Public Cluster for Whale Transfers
+function connectXRPLWS() {
+const xrpl = new WebSocket('wss://xrplcluster.com');
+xrpl.onopen = () => {
+addLog('Connected to XRPL Mainnet ledger stream (monitoring >25k XRP transfers).');
+xrpl.send(JSON.stringify({
+command: 'subscribe',
+streams: ['transactions']
+}));
+};
+xrpl.onmessage = (event) => {
+const data = JSON.parse(event.data);
+if (data.type === 'transaction' && data.validated && data.transaction) {
+const tx = data.transaction;
+if (tx.TransactionType === 'Payment' && typeof tx.Amount === 'string') {
+const xrpAmount = parseInt(tx.Amount, 10) / 1000000;
+if (xrpAmount >= 25000) {
+whaleTxCount++;
+whaleVolumeXRP += xrpAmount;
+document.getElementById('xrplVal').textContent = ${whaleTxCount} Tx;
+document.getElementById('xrplSub').textContent = ${(whaleVolumeXRP / 1000).toFixed(1)}k XRP moved on-chain;
+addLog(XRPL WHALE TRANSFER: ${xrpAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })} XRP moved (${tx.Account.slice(0, 6)}… → ${tx.Destination.slice(0, 6)}…), 'warning');
+}
+}
+}
+};
+xrpl.onclose = () => setTimeout(connectXRPLWS, 5000);
+}
+// 3. Evaluate Composite Bearish Drop Risk
+function evaluateSignals() {
+if (bidsMap.size === 0 || asksMap.size === 0) return;
+const sortedBids = Array.from(bidsMap.entries()).sort((a, b) => b[0] - a[0]).slice(0, 25);
+const sortedAsks = Array.from(asksMap.entries()).sort((a, b) => a[0] - b[0]).slice(0, 25);
+const bestBid = sortedBids[0][0];
+const bestAsk = sortedAsks[0][0];
+const midPrice = lastPrice || ((bestBid + bestAsk) / 2);
+let bidUsd = 0;
+let maxBidWall = { price: midPrice * 0.992, qty: 0 };
+sortedBids.forEach(([p, q]) => {
+bidUsd += p * q;
+if (q > maxBidWall.qty && p < midPrice * 0.9985) {
+maxBidWall = { price: p, qty: q };
+}
+});
+let askUsd = 0;
+sortedAsks.forEach(([p, q]) => {
+askUsd += p * q;
+});
+const askBidRatio = askUsd / (bidUsd || 1);
+// Taker Sell Percentage from rolling trades
+let sellVol = 0, totalVol = 0;
+recentTrades.forEach(t => {
+totalVol += t.qty;
+if (t.side === 'sell') sellVol += t.qty;
+});
+const sellPct = totalVol > 0 ? (sellVol / totalVol) * 100 : 50;
+// Composite Drop Risk Score (0 - 100)
 let riskScore = 20;
-if (askBidRatio > 1.15) riskScore += Math.min(30, (askBidRatio - 1) * 25);
-if (sellPct > 51) riskScore += Math.min(30, (sellPct - 50) * 1.8);
-if (fundingRate > 0.01) riskScore += Math.min(20, fundingRate * 800);
+if (askBidRatio > 1.15) riskScore += Math.min(35, (askBidRatio - 1) * 28);
+if (sellPct > 51) riskScore += Math.min(35, (sellPct - 50) * 1.8);
+if (whaleTxCount > 0) riskScore += Math.min(15, whaleTxCount * 3);
 riskScore = Math.min(98, Math.max(5, Math.round(riskScore)));
-// Update UI Cards
-document.getElementById('priceVal').textContent = $${price.toFixed(4)};
-const targetPrice = maxBidWall.price > 0 ? maxBidWall.price : price * 0.992;
-document.getElementById('priceTarget').textContent = Downside Magnet: $${targetPrice.toFixed(4)};
+// Update UI
+document.getElementById('priceVal').textContent = $${midPrice.toFixed(4)};
+document.getElementById('priceTarget').textContent = Downside Liquidity Magnet: $${maxBidWall.price.toFixed(4)};
 const imbEl = document.getElementById('imbalanceVal');
 imbEl.textContent = ${askBidRatio.toFixed(2)}x Ask;
 imbEl.className = card-value ${askBidRatio >= 1.5 ? 'danger' : askBidRatio >= 1.15 ? 'warn' : 'safe'};
-document.getElementById('imbalanceSub').textContent = Asks: $${(askVol/1000).toFixed(1)}k vs Bids: $${(bidVol/1000).toFixed(1)}k;
+document.getElementById('imbalanceSub').textContent = Asks: $${(askUsd / 1000).toFixed(1)}k vs Bids: $${(bidUsd / 1000).toFixed(1)}k;
 const flowEl = document.getElementById('flowVal');
 flowEl.textContent = ${sellPct.toFixed(1)}% Sell;
 flowEl.className = card-value ${sellPct >= 58 ? 'danger' : sellPct >= 52 ? 'warn' : 'safe'};
-document.getElementById('flowSub').textContent = Taker Sell Vol: ${takerSellVol.toFixed(0)} XRP;
-const fundEl = document.getElementById('fundingVal');
-fundEl.textContent = ${fundingRate >= 0 ? '+' : ''}${fundingRate.toFixed(4)}%;
-fundEl.className = card-value ${fundingRate > 0.015 ? 'danger' : fundingRate > 0.008 ? 'warn' : 'safe'};
-document.getElementById('fundingSub').textContent = fundingRate > 0.01 ? 'Crowded longs vulnerable to flush' : 'Neutral perp positioning';
-// Update Main Bearish Signal Banner
+document.getElementById('flowSub').textContent = Sell Vol: ${sellVol.toFixed(0)} / ${totalVol.toFixed(0)} XRP;
 const sigBox = document.getElementById('signalBox');
 const sigTitle = document.getElementById('signalTitle');
 const sigDesc = document.getElementById('signalDesc');
@@ -275,30 +335,24 @@ dropPill.textContent = Drop Risk: ${riskScore}%;
 if (riskScore >= 68) {
 sigBox.classList.add('alert-active');
 dropPill.style.color = 'var(--crimson)';
-sigTitle.textContent = 'HIGH DROP PROBABILITY — Overhead Supply & Long Trap Detected';
-sigDesc.textContent = Ask walls outweigh bids by ${askBidRatio.toFixed(2)}x while taker selling is at ${sellPct.toFixed(1)}%. Expect liquidity sweep toward $${targetPrice.toFixed(4)}.;
-addLog(ALERT (${riskScore}% Drop Risk): Ask/Bid ${askBidRatio.toFixed(2)}x | Taker Sell ${sellPct.toFixed(1)}% | Target $${targetPrice.toFixed(4)}, 'bearish');
+sigTitle.textContent = 'HIGH DROP PROBABILITY — Overhead Supply & Taker Selling';
+sigDesc.textContent = Overhead asks outweigh bids by ${askBidRatio.toFixed(2)}x while aggressive selling is ${sellPct.toFixed(1)}%. Watch liquidity sweep toward $${maxBidWall.price.toFixed(4)}.;
+addLog(ALERT (${riskScore}% Drop Risk): Ask/Bid ${askBidRatio.toFixed(2)}x | Taker Sell ${sellPct.toFixed(1)}% | Target $${maxBidWall.price.toFixed(4)}, 'bearish');
 } else if (riskScore >= 48) {
 sigBox.classList.remove('alert-active');
 dropPill.style.color = 'var(--amber)';
-sigTitle.textContent = 'MODERATE DISTRIBUTION — Spot Exhaustion Building';
-sigDesc.textContent = Sell pressure is leaning dominant (${sellPct.toFixed(1)}%). Watch for breakdown if bid support fails.;
-addLog(Caution (${riskScore}% Risk): Taker selling at ${sellPct.toFixed(1)}%, Ask/Bid ${askBidRatio.toFixed(2)}x., 'warning');
+sigTitle.textContent = 'MODERATE DISTRIBUTION — Sell Pressure Building';
+sigDesc.textContent = Taker selling is at ${sellPct.toFixed(1)}% with ${askBidRatio.toFixed(2)}x ask/bid ratio. Monitor support at $${maxBidWall.price.toFixed(4)}.;
+addLog(Caution (${riskScore}% Risk): Taker Sell ${sellPct.toFixed(1)}% | Ask/Bid ${askBidRatio.toFixed(2)}x, 'warning');
 } else {
 sigBox.classList.remove('alert-active');
 dropPill.style.color = 'var(--green)';
-sigTitle.textContent = 'LOW DROP RISK — No Immediate Downside Trap';
-sigDesc.textContent = 'Order book bids are absorbing market sells without heavy overhead resistance.';
-addLog(Scan complete (${riskScore}% Risk): Normal flow at $${price.toFixed(4)}.);
+sigTitle.textContent = 'LOW DROP RISK — Bids Absorbing Flow';
+sigDesc.textContent = 'No heavy overhead ask wall or aggressive taker sell imbalance detected.';
+addLog(Snapshot (${riskScore}% Risk): Price $${midPrice.toFixed(4)} | Ask/Bid ${askBidRatio.toFixed(2)}x.);
 }
-pullCounter++;
-document.getElementById('pullCount').textContent = Pulls: ${pullCounter};
-document.getElementById('connDot').classList.add('live');
-document.getElementById('connStatus').textContent = 'Connected · Live Feeds';
-} catch (err) {
-document.getElementById('connStatus').textContent = 'Feed Error (Retrying)';
-addLog(Fetch error: ${err.message}, 'warning');
-}
+snapshotCount++;
+document.getElementById('pullCount').textContent = Snapshots: ${snapshotCount};
 }
 // Master Timer Loop
 setInterval(() => {
@@ -307,18 +361,17 @@ if (intervalSec === 30 && budgetSec > 0) {
 budgetSec--;
 document.getElementById('budget').textContent = formatTime(budgetSec);
 if (budgetSec === 0) {
-addLog('5:00 Stakeout budget exhausted. Auto-switching to Eco Monitor (5m) to prevent rate limits.', 'warning');
+addLog('5:00 Stakeout budget complete. Shifting to Eco Monitor (5m).', 'warning');
 setMode(300);
 }
 }
 timeLeft--;
 if (timeLeft <= 0) {
-fetchBearishMetrics();
+evaluateSignals();
 timeLeft = intervalSec;
 }
 document.getElementById('countdown').textContent = formatTime(timeLeft);
 }, 1000);
-// Initial Pull on Load
-fetchBearishMetrics();
-
-
+// Start Live WebSocket Streams Immediately
+connectKrakenWS();
+connectXRPLWS();
