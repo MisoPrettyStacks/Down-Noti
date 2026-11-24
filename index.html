@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>XRPL Downside Terminal — Bearish Anomaly & Drop Monitor</title>
+  <style>
+    :root {
+      --bg: #0b0d12;
+      --panel: #131722;
+      --border: #232938;
+      --text: #e2e8f0;
+      --muted: #8b95a5;
+      --crimson: #ff3b5c;
+      --crimson-dim: rgba(255, 59, 92, 0.14);
+      --amber: #f59e0b;
+      --cyan: #38bdf8;
+      --green: #10b981;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, monospace; }
+    body { background: var(--bg); color: var(--text); padding: 20px; line-height: 1.5; }
+
+    .container { max-width: 1100px; margin: 0 auto; }
+
+    /* Header */
+    header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 16px; margin-bottom: 20px; gap: 12px; }
+    .title-group h1 { font-size: 1.35rem; font-weight: 700; color: var(--crimson); letter-spacing: -0.02em; }
+    .title-group p { font-size: 0.8rem; color: var(--muted); }
+    .status-badge { display: inline-flex; align-items: center; gap: 8px; background: var(--panel); border: 1px solid var(--border); padding: 6px 12px; border-radius: 6px; font-size: 0.8rem; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--amber); animation: pulse 1.5s infinite; }
+    .dot.live { background: var(--crimson); }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+    /* Controls Bar */
+    .controls { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; background: var(--panel); border: 1px solid var(--border); padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; gap: 12px; }
+    .mode-group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    button { background: #1c2230; color: var(--text); border: 1px solid var(--border); padding: 6px 12px; border-radius: 5px; cursor: pointer; font-size: 0.8rem; transition: 0.15s; }
+    button:hover { border-color: var(--crimson); }
+    button.active { background: var(--crimson-dim); border-color: var(--crimson); color: var(--crimson); font-weight: 600; }
+    .budget-info { font-size: 0.8rem; color: var(--muted); display: flex; gap: 16px; align-items: center; }
+
+    /* Grid */
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-bottom: 20px; }
+    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+    .card-label { font-size: 0.75rem; text-transform: uppercase; color: var(--muted); letter-spacing: 0.05em; margin-bottom: 6px; }
+    .card-value { font-size: 1.5rem; font-weight: 700; }
+    .card-sub { font-size: 0.78rem; color: var(--muted); margin-top: 4px; }
+
+    .danger { color: var(--crimson); }
+    .warn { color: var(--amber); }
+    .safe { color: var(--green); }
+
+    /* Alert Banner */
+    .signal-box { background: var(--panel); border: 1px solid var(--border); border-left: 4px solid var(--muted); border-radius: 8px; padding: 16px; margin-bottom: 20px; }
+    .signal-box.alert-active { border-left-color: var(--crimson); background: linear-gradient(90deg, rgba(255,59,92,0.08) 0%, var(--panel) 100%); }
+    .signal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .signal-title { font-weight: 700; font-size: 1rem; }
+    .drop-score-pill { padding: 3px 10px; border-radius: 999px; font-size: 0.78rem; font-weight: 700; background: #1c2230; }
+
+    /* Feed Log */
+    .feed-panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+    .feed-header { font-size: 0.85rem; font-weight: 600; margin-bottom: 12px; color: var(--muted); display: flex; justify-content: space-between; }
+    .log-list { list-style: none; max-height: 280px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+    .log-item { font-size: 0.82rem; padding: 8px 10px; background: #0e1118; border-radius: 5px; border-left: 3px solid var(--border); display: flex; justify-content: space-between; gap: 10px; }
+    .log-item.bearish { border-left-color: var(--crimson); }
+    .log-item.warning { border-left-color: var(--amber); }
+    .log-time { color: var(--muted); white-space: nowrap; font-size: 0.75rem; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="title-group">
+        <h1>XRPL Downside Terminal — Bearish Distribution Monitor</h1>
+        <p>Exhaustion tracking · overhead ask walls · long liquidation traps · exchange inflow footprints</p>
+      </div>
+      <div class="status-badge">
+        <span class="dot" id="connDot"></span>
+        <span id="connStatus">Initializing feeds…</span>
+      </div>
+    </header>
+
+    <div class="controls">
+      <div class="mode-group">
+        <span style="font-size: 0.8rem; color: var(--muted);">Refresh Mode:</span>
+        <button id="btnStakeout" class="active" onclick="setMode(30)">Active Stakeout 30s</button>
+        <button id="btnEco" onclick="setMode(300)">Eco Monitor 5m</button>
+        <button id="btnPause" onclick="togglePause()">Pause Pull Now</button>
+      </div>
+      <div class="budget-info">
+        <span>Next free pull: <strong id="countdown" style="color: var(--text);">0:30</strong></span>
+        <span>Stakeout budget: <strong id="budget" style="color: var(--amber);">5:00</strong> before rate-limit pause</span>
+      </div>
+    </div>
+
+    <div class="signal-box" id="signalBox">
+      <div class="signal-header">
+        <span class="signal-title" id="signalTitle">Scanning for Bearish Divergence & Liquidity Traps…</span>
+        <span class="drop-score-pill" id="dropProb">Drop Risk: --%</span>
+      </div>
+      <p id="signalDesc" style="font-size: 0.85rem; color: var(--muted);">
+        Waiting for initial order book depth, perp funding, and spot taker sell ratios.
+      </p>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <div class="card-label">XRP Spot Price (USDT)</div>
+        <div class="card-value" id="priceVal">--</div>
+        <div class="card-sub" id="priceTarget">Downside Magnet: --</div>
+      </div>
+
+      <div class="card">
+        <div class="card-label">L2 Ask/Bid Imbalance (Top 20)</div>
+        <div class="card-value" id="imbalanceVal">--</div>
+        <div class="card-sub" id="imbalanceSub">Overhead sell pressure ratio</div>
+      </div>
+
+      <div class="card">
+        <div class="card-label">Taker Sell / Buy Flow (5m)</div>
+        <div class="card-value" id="flowVal">--</div>
+        <div class="card-sub" id="flowSub">Spot CVD exhaustion check</div>
+      </div>
+
+      <div class="card">
+        <div class="card-label">Perp Long Trap Risk</div>
+        <div class="card-value" id="fundingVal">--</div>
+        <div class="card-sub" id="fundingSub">Funding & crowded long leverage</div>
+      </div>
+    </div>
+
+    <div class="feed-panel">
+      <div class="feed-header">
+        <span>LIVE BEARISH ANOMALY & ON-CHAIN DISTRIBUTION LOG</span>
+        <span id="pullCount">Pulls: 0</span>
+      </div>
+      <ul class="log-list" id="logList"></ul>
+    </div>
+  </div>
+
+  <script>
+    let intervalSec = 30;
+    let timeLeft = 30;
+    let budgetSec = 300; // 5:00 stakeout budget
+    let isPaused = false;
+    let pullCounter = 0;
+
+    function formatTime(sec) {
+      const m = Math.floor(sec / 60);
+      const s = sec % 60;
+      return `${m}:${s < 10 ? '0' : ''}${s}`;
+    }
+
+    function addLog(msg, type = 'neutral') {
+      const list = document.getElementById('logList');
+      const li = document.createElement('li');
+      li.className = `log-item ${type}`;
+      const now = new Date().toLocaleTimeString([], { hour12: false });
+      li.innerHTML = `<span>${msg}</span><span class="log-time">${now}</span>`;
+      list.prepend(li);
+      if (list.children.length > 40) list.removeChild(list.lastChild);
+    }
+
+    function setMode(sec) {
+      intervalSec = sec;
+      timeLeft = sec;
+      document.getElementById('btnStakeout').classList.toggle('active', sec === 30);
+      document.getElementById('btnEco').classList.toggle('active', sec === 300);
+      addLog(`Switched refresh mode to ${sec === 30 ? 'Active Stakeout (30s)' : 'Eco Monitor (5m)'}.`);
+    }
+
+    function togglePause() {
+      isPaused = !isPaused;
+      const btn = document.getElementById('btnPause');
+      btn.textContent = isPaused ? 'Resume Pulls' : 'Pause Pull Now';
+      btn.classList.toggle('active', isPaused);
+      addLog(isPaused ? 'Feed polling paused by user.' : 'Feed polling resumed.');
+    }
+
+    async function fetchBearishMetrics() {
+      try {
+        document.getElementById('connStatus').textContent = 'Pulling live feeds…';
+
+        // 1. Spot Price & 24h Ticker
+        const tickerRes = await fetch('https://binance.com');
+        const ticker = await tickerRes.json();
+        const price = parseFloat(ticker.lastPrice);
+
+        // 2. L2 Order Book Depth (Top 50 levels)
+        const depthRes = await fetch('https://binance.com');
+        const depth = await depthRes.json();
+
+        let bidVol = 0, askVol = 0;
+        let maxBidWall = { price: 0, qty: 0 };
+
+        depth.bids.forEach(([p, q]) => {
+          const fp = parseFloat(p), fq = parseFloat(q);
+          bidVol += fp * fq;
+          if (fq > maxBidWall.qty && fp < price * 0.998) {
+            maxBidWall = { price: fp, qty: fq };
+          }
+        });
+
+        depth.asks.forEach(([p, q]) => {
+          askVol += parseFloat(p) * parseFloat(q);
+        });
+
+        const askBidRatio = askVol / (bidVol || 1);
+
+        // 3. Recent 5m Klines for Taker Sell vs Buy Pressure
+        const klineRes = await fetch('https://binance.com');
