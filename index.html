@@ -210,3 +210,95 @@
 
         // 3. Recent 5m Klines for Taker Sell vs Buy Pressure
         const klineRes = await fetch('https://binance.com');
+const klines = await klineRes.json();
+const latest = klines[klines.length - 1];
+const totalVol = parseFloat(latest[5]);
+const takerBuyVol = parseFloat(latest[9]);
+const takerSellVol = totalVol - takerBuyVol;
+const sellPct = totalVol > 0 ? (takerSellVol / totalVol) * 100 : 50;
+// 4. Futures Funding Rate (Crowded Longs Check)
+let fundingRate = 0;
+try {
+const fundRes = await fetch('binance.com');
+const fundData = await fundRes.json();
+fundingRate = parseFloat(fundData.lastFundingRate) * 100;
+} catch (e) { /* Fallback if futures endpoint blocked */ }
+// Calculate Composite Drop Risk Score (0 - 100)
+let riskScore = 20;
+if (askBidRatio > 1.2) riskScore += Math.min(30, (askBidRatio - 1) * 25);
+if (sellPct > 52) riskScore += Math.min(30, (sellPct - 50) * 1.8);
+if (fundingRate > 0.01) riskScore += Math.min(20, fundingRate * 800);
+riskScore = Math.min(98, Math.max(5, Math.round(riskScore)));
+// Update UI Cards
+document.getElementById('priceVal').textContent = $${price.toFixed(4)};
+document.getElementById('priceTarget').textContent = maxBidWall.price > 0
+? Downside Liquidity Magnet: $${maxBidWall.price.toFixed(4)}
+: Downside Magnet: $${(price * 0.992).toFixed(4)};
+const imbEl = document.getElementById('imbalanceVal');
+imbEl.textContent = ${askBidRatio.toFixed(2)}x Ask;
+imbEl.className = card-value ${askBidRatio >= 1.5 ? 'danger' : askBidRatio >= 1.15 ? 'warn' : 'safe'};
+document.getElementById('imbalanceSub').textContent = Asks: $${(askVol/1000).toFixed(0)}k vs Bids: $${(bidVol/1000).toFixed(0)}k;
+const flowEl = document.getElementById('flowVal');
+flowEl.textContent = ${sellPct.toFixed(1)}% Sell;
+flowEl.className = card-value ${sellPct >= 58 ? 'danger' : sellPct >= 52 ? 'warn' : 'safe'};
+document.getElementById('flowSub').textContent = 5m Taker Sell: ${takerSellVol.toFixed(0)} XRP;
+const fundEl = document.getElementById('fundingVal');
+fundEl.textContent = ${fundingRate >= 0 ? '+' : ''}${fundingRate.toFixed(4)}%;
+fundEl.className = card-value ${fundingRate > 0.015 ? 'danger' : fundingRate > 0.008 ? 'warn' : 'safe'};
+document.getElementById('fundingSub').textContent = fundingRate > 0.01 ? 'Crowded longs vulnerable to flush' : 'Neutral perp positioning';
+// Update Main Bearish Signal Banner
+const sigBox = document.getElementById('signalBox');
+const sigTitle = document.getElementById('signalTitle');
+const sigDesc = document.getElementById('signalDesc');
+const dropPill = document.getElementById('dropProb');
+dropPill.textContent = Drop Risk: ${riskScore}%;
+if (riskScore >= 68) {
+sigBox.classList.add('alert-active');
+dropPill.style.color = 'var(--crimson)';
+sigTitle.textContent = 'HIGH DROP PROBABILITY — Overhead Supply & Long Trap Detected';
+sigDesc.textContent = Ask walls outweigh bids by ${askBidRatio.toFixed(2)}x while 5m taker selling is at ${sellPct.toFixed(1)}%. Expect liquidity sweep toward $${maxBidWall.price ? maxBidWall.price.toFixed(4) : (price * 0.992).toFixed(4)}.;
+addLog(ALERT (${riskScore}% Drop Risk): Ask/Bid ${askBidRatio.toFixed(2)}x | Taker Sell ${sellPct.toFixed(1)}% | Target $${(price * 0.993).toFixed(4)}, 'bearish');
+} else if (riskScore >= 48) {
+sigBox.classList.remove('alert-active');
+dropPill.style.color = 'var(--amber)';
+sigTitle.textContent = 'MODERATE DISTRIBUTION — Spot Exhaustion Building';
+sigDesc.textContent = Sell pressure is leaning dominant (${sellPct.toFixed(1)}%). Watch for breakdown if bid support fails.;
+addLog(Caution (${riskScore}% Risk): Spot taker selling at ${sellPct.toFixed(1)}%, Ask/Bid ${askBidRatio.toFixed(2)}x., 'warning');
+} else {
+sigBox.classList.remove('alert-active');
+dropPill.style.color = 'var(--green)';
+sigTitle.textContent = 'LOW DROP RISK — No Immediate Downside Trap';
+sigDesc.textContent = 'Order book bids are absorbing market sells without heavy overhead resistance.';
+addLog(Scan complete (${riskScore}% Risk): Normal flow at $${price.toFixed(4)}.);
+}
+pullCounter++;
+document.getElementById('pullCount').textContent = Pulls: ${pullCounter};
+document.getElementById('connDot').classList.add('live');
+document.getElementById('connStatus').textContent = 'Connected · Live Feeds';
+} catch (err) {
+document.getElementById('connStatus').textContent = 'Feed Error (Retrying)';
+addLog(Fetch error: ${err.message}, 'warning');
+}
+}
+// Master Timer Loop
+setInterval(() => {
+if (isPaused) return;
+if (intervalSec === 30 && budgetSec > 0) {
+budgetSec--;
+document.getElementById('budget').textContent = formatTime(budgetSec);
+if (budgetSec === 0) {
+addLog('5:00 Stakeout budget exhausted. Auto-switching to Eco Monitor (5m) to prevent rate limits.', 'warning');
+setMode(300);
+}
+}
+timeLeft--;
+if (timeLeft <= 0) {
+fetchBearishMetrics();
+timeLeft = intervalSec;
+}
+document.getElementById('countdown').textContent = formatTime(timeLeft);
+}, 1000);
+// Initial Pull on Load
+fetchBearishMetrics();
+
+
