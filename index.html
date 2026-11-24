@@ -87,6 +87,7 @@
         <button id="btnStakeout" class="active" onclick="setMode(30)">Active Stakeout 30s</button>
         <button id="btnEco" onclick="setMode(300)">Eco Monitor 5m</button>
         <button id="btnPause" onclick="togglePause()">Pause Pull Now</button>
+        <button onclick="fetchBearishMetrics()">Force Pull</button>
       </div>
       <div class="budget-info">
         <span>Next free pull: <strong id="countdown" style="color: var(--text);">0:30</strong></span>
@@ -106,13 +107,13 @@
 
     <div class="grid">
       <div class="card">
-        <div class="card-label">XRP Spot Price (USDT)</div>
+        <div class="card-label">XRP Spot Price (USD)</div>
         <div class="card-value" id="priceVal">--</div>
         <div class="card-sub" id="priceTarget">Downside Magnet: --</div>
       </div>
 
       <div class="card">
-        <div class="card-label">L2 Ask/Bid Imbalance (Top 20)</div>
+        <div class="card-label">L2 Ask/Bid Imbalance (Top 50)</div>
         <div class="card-value" id="imbalanceVal">--</div>
         <div class="card-sub" id="imbalanceSub">Overhead sell pressure ratio</div>
       </div>
@@ -142,7 +143,7 @@
   <script>
     let intervalSec = 30;
     let timeLeft = 30;
-    let budgetSec = 300; // 5:00 stakeout budget
+    let budgetSec = 300;
     let isPaused = false;
     let pullCounter = 0;
 
@@ -182,66 +183,85 @@
       try {
         document.getElementById('connStatus').textContent = 'Pulling live feeds…';
 
-        // 1. Spot Price & 24h Ticker
-        const tickerRes = await fetch('https://binance.com');
+        // 1. Coinbase Exchange Spot Ticker (US-accessible, no CORS blocks)
+        const tickerRes = await fetch('https://coinbase.com');
+        if (!tickerRes.ok) throw new Error(`Coinbase Ticker HTTP ${tickerRes.status}`);
         const ticker = await tickerRes.json();
-        const price = parseFloat(ticker.lastPrice);
+        const price = parseFloat(ticker.price);
 
-        // 2. L2 Order Book Depth (Top 50 levels)
-        const depthRes = await fetch('https://binance.com');
-        const depth = await depthRes.json();
+        // 2. Coinbase Exchange Level 2 Order Book (Top 50 levels)
+        const bookRes = await fetch('https://coinbase.com');
+        if (!bookRes.ok) throw new Error(`Coinbase Book HTTP ${bookRes.status}`);
+        const book = await bookRes.json();
 
         let bidVol = 0, askVol = 0;
         let maxBidWall = { price: 0, qty: 0 };
 
-        depth.bids.forEach(([p, q]) => {
+        book.bids.slice(0, 50).forEach(([p, q]) => {
           const fp = parseFloat(p), fq = parseFloat(q);
           bidVol += fp * fq;
-          if (fq > maxBidWall.qty && fp < price * 0.998) {
+          if (fq > maxBidWall.qty && fp < price * 0.9985) {
             maxBidWall = { price: fp, qty: fq };
           }
         });
 
-        depth.asks.forEach(([p, q]) => {
-          askVol += parseFloat(p) * parseFloat(q);
-        });
-
-        const askBidRatio = askVol / (bidVol || 1);
-
-        // 3. Recent 5m Klines for Taker Sell vs Buy Pressure
-        const klineRes = await fetch('https://binance.com');
+        book.asks.slice(0, 50).forEach(([p, q]) => {
+askVol += parseFloat(p) * parseFloat(q);
+});
+const askBidRatio = askVol / (bidVol || 1);
+// 3. Binance.US 5m Klines for Taker Sell vs Buy Volume (Indices [5] and)
+let sellPct = 50;
+let takerSellVol = 0;
+try {
+const klineRes = await fetch('binance.us');
 const klines = await klineRes.json();
 const latest = klines[klines.length - 1];
 const totalVol = parseFloat(latest[5]);
 const takerBuyVol = parseFloat(latest[9]);
-const takerSellVol = totalVol - takerBuyVol;
-const sellPct = totalVol > 0 ? (takerSellVol / totalVol) * 100 : 50;
-// 4. Futures Funding Rate (Crowded Longs Check)
+takerSellVol = Math.max(0, totalVol - takerBuyVol);
+sellPct = totalVol > 0 ? (takerSellVol / totalVol) * 100 : 50;
+} catch (e) {
+// Fallback to recent Coinbase trades if Binance.US is unreachable
+const tradesRes = await fetch('coinbase.com');
+const trades = await tradesRes.json();
+let sellSize = 0, totalSize = 0;
+trades.forEach(t => {
+const sz = parseFloat(t.size);
+totalSize += sz;
+if (t.side === 'buy') sellSize += sz; // On Coinbase, side='buy' means maker was buy (taker sold)
+});
+takerSellVol = sellSize;
+sellPct = totalSize > 0 ? (sellSize / totalSize) * 100 : 50;
+}
+// 4. OKX Public Perpetual Funding Rate (Global benchmark, CORS-friendly)
 let fundingRate = 0;
 try {
-const fundRes = await fetch('binance.com');
-const fundData = await fundRes.json();
-fundingRate = parseFloat(fundData.lastFundingRate) * 100;
-} catch (e) { /* Fallback if futures endpoint blocked */ }
+const fundRes = await fetch('okx.com');
+const fundJson = await fundRes.json();
+if (fundJson.data && fundJson.data.length > 0) {
+fundingRate = parseFloat(fundJson.data[0].fundingRate) * 100;
+}
+} catch (e) {
+fundingRate = 0;
+}
 // Calculate Composite Drop Risk Score (0 - 100)
 let riskScore = 20;
-if (askBidRatio > 1.2) riskScore += Math.min(30, (askBidRatio - 1) * 25);
-if (sellPct > 52) riskScore += Math.min(30, (sellPct - 50) * 1.8);
+if (askBidRatio > 1.15) riskScore += Math.min(30, (askBidRatio - 1) * 25);
+if (sellPct > 51) riskScore += Math.min(30, (sellPct - 50) * 1.8);
 if (fundingRate > 0.01) riskScore += Math.min(20, fundingRate * 800);
 riskScore = Math.min(98, Math.max(5, Math.round(riskScore)));
 // Update UI Cards
 document.getElementById('priceVal').textContent = $${price.toFixed(4)};
-document.getElementById('priceTarget').textContent = maxBidWall.price > 0
-? Downside Liquidity Magnet: $${maxBidWall.price.toFixed(4)}
-: Downside Magnet: $${(price * 0.992).toFixed(4)};
+const targetPrice = maxBidWall.price > 0 ? maxBidWall.price : price * 0.992;
+document.getElementById('priceTarget').textContent = Downside Magnet: $${targetPrice.toFixed(4)};
 const imbEl = document.getElementById('imbalanceVal');
 imbEl.textContent = ${askBidRatio.toFixed(2)}x Ask;
 imbEl.className = card-value ${askBidRatio >= 1.5 ? 'danger' : askBidRatio >= 1.15 ? 'warn' : 'safe'};
-document.getElementById('imbalanceSub').textContent = Asks: $${(askVol/1000).toFixed(0)}k vs Bids: $${(bidVol/1000).toFixed(0)}k;
+document.getElementById('imbalanceSub').textContent = Asks: $${(askVol/1000).toFixed(1)}k vs Bids: $${(bidVol/1000).toFixed(1)}k;
 const flowEl = document.getElementById('flowVal');
 flowEl.textContent = ${sellPct.toFixed(1)}% Sell;
 flowEl.className = card-value ${sellPct >= 58 ? 'danger' : sellPct >= 52 ? 'warn' : 'safe'};
-document.getElementById('flowSub').textContent = 5m Taker Sell: ${takerSellVol.toFixed(0)} XRP;
+document.getElementById('flowSub').textContent = Taker Sell Vol: ${takerSellVol.toFixed(0)} XRP;
 const fundEl = document.getElementById('fundingVal');
 fundEl.textContent = ${fundingRate >= 0 ? '+' : ''}${fundingRate.toFixed(4)}%;
 fundEl.className = card-value ${fundingRate > 0.015 ? 'danger' : fundingRate > 0.008 ? 'warn' : 'safe'};
@@ -256,14 +276,14 @@ if (riskScore >= 68) {
 sigBox.classList.add('alert-active');
 dropPill.style.color = 'var(--crimson)';
 sigTitle.textContent = 'HIGH DROP PROBABILITY — Overhead Supply & Long Trap Detected';
-sigDesc.textContent = Ask walls outweigh bids by ${askBidRatio.toFixed(2)}x while 5m taker selling is at ${sellPct.toFixed(1)}%. Expect liquidity sweep toward $${maxBidWall.price ? maxBidWall.price.toFixed(4) : (price * 0.992).toFixed(4)}.;
-addLog(ALERT (${riskScore}% Drop Risk): Ask/Bid ${askBidRatio.toFixed(2)}x | Taker Sell ${sellPct.toFixed(1)}% | Target $${(price * 0.993).toFixed(4)}, 'bearish');
+sigDesc.textContent = Ask walls outweigh bids by ${askBidRatio.toFixed(2)}x while taker selling is at ${sellPct.toFixed(1)}%. Expect liquidity sweep toward $${targetPrice.toFixed(4)}.;
+addLog(ALERT (${riskScore}% Drop Risk): Ask/Bid ${askBidRatio.toFixed(2)}x | Taker Sell ${sellPct.toFixed(1)}% | Target $${targetPrice.toFixed(4)}, 'bearish');
 } else if (riskScore >= 48) {
 sigBox.classList.remove('alert-active');
 dropPill.style.color = 'var(--amber)';
 sigTitle.textContent = 'MODERATE DISTRIBUTION — Spot Exhaustion Building';
 sigDesc.textContent = Sell pressure is leaning dominant (${sellPct.toFixed(1)}%). Watch for breakdown if bid support fails.;
-addLog(Caution (${riskScore}% Risk): Spot taker selling at ${sellPct.toFixed(1)}%, Ask/Bid ${askBidRatio.toFixed(2)}x., 'warning');
+addLog(Caution (${riskScore}% Risk): Taker selling at ${sellPct.toFixed(1)}%, Ask/Bid ${askBidRatio.toFixed(2)}x., 'warning');
 } else {
 sigBox.classList.remove('alert-active');
 dropPill.style.color = 'var(--green)';
